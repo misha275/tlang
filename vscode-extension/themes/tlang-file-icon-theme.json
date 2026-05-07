@@ -1,0 +1,14 @@
+{
+  "iconDefinitions": {
+    "_tlang": {
+      "iconPath": "../icons/tlang.svg"
+    },
+    "_tlib": {
+      "iconPath": "../icons/tlib.svg"
+    }
+  },
+  "fileExtensions": {
+    "tlang": "_tlang",
+    "tlib": "_tlib"
+  }
+}

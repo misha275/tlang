@@ -3,9 +3,12 @@
 This extension adds basic language support for TLang:
 
 - `.tlang` file association
+- built-in custom file icons for `.tlang` and `.tlib`
 - syntax highlighting
 - snippets for common language constructs
 - a command to compile the active TLang file through the existing `tlang.exe` compiler
+
+The extension also contributes a file icon theme. Select `TLang File Icons` from the icon theme picker if you want the same custom TLang and TLib icons enforced through a file icon theme.
 
 ## Compile command
 
@@ -36,14 +39,14 @@ After compilation, the extension entry point will be emitted to `out/extension.j
 npm run package
 ```
 
-This creates a `tlang-vscode-extension-0.0.1.vsix` file in the current directory.
+This creates a `tlang-vscode-extension-0.0.3.vsix` file in the current directory.
 
 ### Install in VS Code
 
 **Option 1: From the command line**
 
 ```powershell
-code --install-extension tlang-vscode-extension-0.0.1.vsix
+code --install-extension tlang-vscode-extension-0.0.3.vsix
 ```
 
 **Option 2: From VS Code UI**

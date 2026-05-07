@@ -46,5 +46,42 @@
     "prefix": "tlang-text",
     "body": "TEXT START ${1:HELLO WORLD} TEXT END",
     "description": "Create a TLang text literal"
+  },
+  "Windows UI": {
+    "prefix": "tlang-win-ui",
+    "body": [
+      "FUNCTION START MAIN RETURNS NUMBER END LINE",
+      "LET WINDOW AS NUMBER VALUE CALL WINWINDOW TEXT START ${1:TLANG UI} TEXT END ${2:FOUR HUNDRED} ${3:THREE HUNDRED} END LINE",
+      "LET BUTTON AS NUMBER VALUE CALL WINBUTTON WINDOW TEXT START ${4:OK} TEXT END TEN TEN ONE HUNDRED FORTY TEN END LINE",
+      "WHILE CALL WINWAIT DO END LINE",
+      "LET COMMAND AS NUMBER VALUE CALL WINCOMMAND END LINE",
+      "IF EQUAL COMMAND TEN THEN END LINE",
+      "CALL WINMESSAGE TEXT START ${5:TLANG} TEXT END TEXT START ${6:HELLO} TEXT END END LINE",
+      "END IF END LINE",
+      "END WHILE END LINE",
+      "RETURN ZERO END LINE",
+      "FUNCTION END MAIN END LINE"
+    ],
+    "description": "Create a Windows API UI program"
+  },
+  "Use Library": {
+    "prefix": "tlang-use-library",
+    "body": "USE LIBRARY ${1:PIXELGRAPHICS} END LINE",
+    "description": "Include a .tlib library"
+  },
+  "Pixel Graphics Program": {
+    "prefix": "tlang-pixel",
+    "body": [
+      "USE LIBRARY PIXELGRAPHICS END LINE",
+      "",
+      "FUNCTION START MAIN RETURNS NUMBER END LINE",
+      "LET CANVAS AS NUMBER VALUE CALL GRAPHICSWINDOW TEXT START ${1:PIXELS} TEXT END ${2:EIGHT} ${3:EIGHT} END LINE",
+      "LET COLOR AS NUMBER VALUE CALL GRAPHICSHEX TEXT START ${4:#FF0000} TEXT END END LINE",
+      "CALL GRAPHICSPIXEL CANVAS ${7:ZERO} ${8:ZERO} COLOR END LINE",
+      "CALL GRAPHICSSHOW CANVAS END LINE",
+      "RETURN CALL GRAPHICSRUN END LINE",
+      "FUNCTION END MAIN END LINE"
+    ],
+    "description": "Create a pixel dictionary graphics program"
   }
 }

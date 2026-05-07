@@ -6,6 +6,9 @@
       "include": "#text"
     },
     {
+      "include": "#function"
+    },
+    {
       "include": "#keywords"
     },
     {
@@ -18,15 +21,38 @@
       "include": "#booleans"
     },
     {
+      "include": "#builtins"
+    },
+    {
       "include": "#identifiers"
     }
   ],
   "repository": {
+    "function": {
+      "patterns": [
+        {
+          "name": "keyword.declaration.function.start.tlang",
+          "match": "\\bFUNCTION\\s+START\\b"
+        },
+        {
+          "name": "keyword.declaration.function.end.tlang",
+          "match": "\\bFUNCTION\\s+END\\b"
+        }
+      ]
+    },
+    "terminators": {
+      "patterns": [
+        {
+          "name": "punctuation.terminator.line.tlang",
+          "match": "\\bEND\\s+LINE\\b"
+        }
+      ]
+    },
     "keywords": {
       "patterns": [
         {
           "name": "keyword.control.tlang",
-          "match": "\\b(FUNCTION|START|END|LINE|LET|FIXED|SET|AS|VALUE|RETURNS|RETURN|IF|THEN|ELSE|WHILE|DO|INPUT|OUTPUT|CALL|PARAMETER|ADD|SUBTRACT|MULTIPLY|DIVIDE|MODULO|JOIN|EQUAL|LESS|GREATER|AND|OR|NOT)\\b"
+          "match": "\\b(LET|FIXED|SET|AS|VALUE|RETURNS|RETURN|IF|THEN|ELSE|WHILE|DO|INPUT|OUTPUT|CALL|USE|LIBRARY|PARAMETER|ADD|SUBTRACT|MULTIPLY|DIVIDE|MODULO|JOIN|EQUAL|LESS|GREATER|AND|OR|NOT|START)\\b"
         }
       ]
     },
@@ -51,6 +77,14 @@
         {
           "name": "constant.language.boolean.tlang",
           "match": "\\b(TRUE|FALSE)\\b"
+        }
+      ]
+    },
+    "builtins": {
+      "patterns": [
+        {
+          "name": "support.function.tlang",
+          "match": "\\b(WINMESSAGE|WINWINDOW|WINBUTTON|WINLABEL|WINEDIT|WINTEXT|WINSETTEXT|WINSHOW|WINWAIT|WINRUN|WINCOMMAND|WINQUIT|PIXELWINDOW|PIXELCOLOR|PIXELHEX|PIXELSET|PIXELGET|PIXELCLEAR|PIXELPRESENT)\\b"
         }
       ]
     },

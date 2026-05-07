@@ -1,0 +1,75 @@
+{
+  "name": "TLang Colors (Dark)",
+  "type": "dark",
+  "colors": {
+    "editor.foreground": "#abb2bf",
+    "editor.background": "#1e222a"
+  },
+  "tokenColors": [
+    {
+      "scope": "keyword.control.tlang",
+      "settings": {
+        "foreground": "#C678DD",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "scope": "keyword.declaration.function.start.tlang",
+      "settings": {
+        "foreground": "#C678DD",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "scope": "keyword.declaration.function.end.tlang",
+      "settings": {
+        "foreground": "#C678DD",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "scope": "punctuation.terminator.line.tlang",
+      "settings": {
+        "foreground": "#6B7280",
+        "fontStyle": "italic"
+      }
+    },
+    {
+      "scope": "storage.type.tlang",
+      "settings": {
+        "foreground": "#61AFEF"
+      }
+    },
+    {
+      "scope": "constant.numeric.word.tlang",
+      "settings": {
+        "foreground": "#D19A66"
+      }
+    },
+    {
+      "scope": "constant.language.boolean.tlang",
+      "settings": {
+        "foreground": "#E06C75",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "scope": "support.function.tlang",
+      "settings": {
+        "foreground": "#98C379"
+      }
+    },
+    {
+      "scope": "string.quoted.other.tlang",
+      "settings": {
+        "foreground": "#98C379"
+      }
+    },
+    {
+      "scope": "variable.other.tlang",
+      "settings": {
+        "foreground": "#E5C07B"
+      }
+    }
+  ]
+}

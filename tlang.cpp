@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
@@ -37,7 +38,7 @@ static std::string location(const std::string& file, const Token& token) {
 static const std::set<std::string> kKeywords = {
     "LET", "FIXED", "SET", "AS", "VALUE", "FUNCTION", "START", "END", "RETURNS",
     "RETURN", "PARAMETER", "IF", "THEN", "ELSE", "WHILE", "DO", "INPUT", "OUTPUT",
-    "CALL", "NUMBER", "TEXT", "BOOL", "VOID", "TRUE", "FALSE", "ADD", "SUBTRACT",
+    "CALL", "USE", "LIBRARY", "NUMBER", "TEXT", "BOOL", "VOID", "TRUE", "FALSE", "ADD", "SUBTRACT",
     "MULTIPLY", "DIVIDE", "MODULO", "JOIN", "EQUAL", "LESS", "GREATER", "AND",
     "OR", "NOT", "NEGATIVE", "POINT", "ZERO", "ONE", "TWO", "THREE", "FOUR",
     "FIVE", "SIX", "SEVEN", "EIGHT", "NINE", "TEN", "ELEVEN", "TWELVE",
@@ -70,16 +71,21 @@ static bool is_type_word(const std::string& word) {
 }
 
 static bool is_number_start(const std::string& word) {
-    return word == "NEGATIVE" || kSmallNumbers.contains(word) || kTens.contains(word);
+    return word == "NEGATIVE" || kSmallNumbers.find(word) != kSmallNumbers.end() || kTens.find(word) != kTens.end();
 }
 
 static bool is_identifier_word(const std::string& word, bool allowMain = false) {
     if (word.empty()) return false;
     if (allowMain && word == "MAIN") return true;
-    if (kKeywords.contains(word)) return false;
+    if (kKeywords.find(word) != kKeywords.end()) return false;
     return std::all_of(word.begin(), word.end(), [](char ch) {
-        return ch >= 'A' && ch <= 'Z';
+        return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z');
     });
+}
+
+static bool is_symbol_char(char ch) {
+    static const std::string symbols = "#!?.,:;+-*/=_()[]<>@%";
+    return symbols.find(ch) != std::string::npos;
 }
 
 static std::vector<Token> lex_source(const std::string& source, const std::string& file) {
@@ -111,11 +117,7 @@ static std::vector<Token> lex_source(const std::string& source, const std::strin
             ++col;
             continue;
         }
-        if (ch >= 'a' && ch <= 'z') {
-            Token token{std::string(1, ch), line, col};
-            throw CompileError(location(file, token) + ": lowercase letters are not allowed in normative TLang");
-        }
-        if (ch < 'A' || ch > 'Z') {
+        if (!((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || is_symbol_char(ch))) {
             Token token{std::string(1, ch), line, col};
             throw CompileError(location(file, token) + ": forbidden character '" + std::string(1, ch) + "'");
         }
@@ -204,13 +206,70 @@ struct Signature {
     Token token;
     std::string name;
     std::size_t arity = 0;
+    std::vector<Type> paramTypes;
     Type returnType = Type::Unknown;
+    bool builtin = false;
 };
+
+struct BuiltinFunction {
+    std::string name;
+    std::string cppName;
+    std::vector<Type> paramTypes;
+    Type returnType = Type::Unknown;
+    bool usesWindowsApi = false;
+};
+
+static const std::unordered_map<std::string, BuiltinFunction>& builtin_functions() {
+    static const std::unordered_map<std::string, BuiltinFunction> builtins = {
+        {"WINMESSAGE", {"WINMESSAGE", "win_message", {Type::Text, Type::Text}, Type::Number, true}},
+        {"WINWINDOW", {"WINWINDOW", "win_window", {Type::Text, Type::Number, Type::Number}, Type::Number, true}},
+        {"WINBUTTON", {"WINBUTTON", "win_button", {Type::Number, Type::Text, Type::Number, Type::Number, Type::Number, Type::Number, Type::Number}, Type::Number, true}},
+        {"WINLABEL", {"WINLABEL", "win_label", {Type::Number, Type::Text, Type::Number, Type::Number, Type::Number, Type::Number}, Type::Number, true}},
+        {"WINEDIT", {"WINEDIT", "win_edit", {Type::Number, Type::Text, Type::Number, Type::Number, Type::Number, Type::Number, Type::Number}, Type::Number, true}},
+        {"WINTEXT", {"WINTEXT", "win_text", {Type::Number}, Type::Text, true}},
+        {"WINSETTEXT", {"WINSETTEXT", "win_set_text", {Type::Number, Type::Text}, Type::Void, true}},
+        {"WINSHOW", {"WINSHOW", "win_show", {Type::Number}, Type::Void, true}},
+        {"WINWAIT", {"WINWAIT", "win_wait", {}, Type::Bool, true}},
+        {"WINRUN", {"WINRUN", "win_run", {}, Type::Number, true}},
+        {"WINCOMMAND", {"WINCOMMAND", "win_command", {}, Type::Number, true}},
+        {"WINQUIT", {"WINQUIT", "win_quit", {}, Type::Void, true}},
+        {"PIXELWINDOW", {"PIXELWINDOW", "pixel_window", {Type::Text, Type::Number, Type::Number}, Type::Number, true}},
+        {"PIXELCOLOR", {"PIXELCOLOR", "pixel_color", {Type::Number, Type::Number, Type::Number}, Type::Number, true}},
+        {"PIXELHEX", {"PIXELHEX", "pixel_hex", {Type::Text}, Type::Number, true}},
+        {"PIXELSET", {"PIXELSET", "pixel_set", {Type::Number, Type::Number, Type::Number, Type::Number}, Type::Void, true}},
+        {"PIXELGET", {"PIXELGET", "pixel_get", {Type::Number, Type::Number, Type::Number}, Type::Number, true}},
+        {"PIXELCLEAR", {"PIXELCLEAR", "pixel_clear", {Type::Number}, Type::Void, true}},
+        {"PIXELPRESENT", {"PIXELPRESENT", "pixel_present", {Type::Number}, Type::Void, true}},
+        {"PIXELLAYER", {"PIXELLAYER", "pixel_layer", {Type::Number, Type::Number}, Type::Number, true}},
+        {"PIXELRECT", {"PIXELRECT", "pixel_rect", {Type::Number, Type::Number, Type::Number, Type::Number, Type::Number, Type::Number}, Type::Void, true}},
+        {"PIXELFRAME", {"PIXELFRAME", "pixel_frame", {Type::Number, Type::Number, Type::Number, Type::Number, Type::Number, Type::Number}, Type::Void, true}},
+        {"PIXELLINE", {"PIXELLINE", "pixel_line", {Type::Number, Type::Number, Type::Number, Type::Number, Type::Number, Type::Number}, Type::Void, true}},
+        {"PIXELCIRCLE", {"PIXELCIRCLE", "pixel_circle", {Type::Number, Type::Number, Type::Number, Type::Number, Type::Number}, Type::Void, true}},
+        {"PIXELCIRCLEFRAME", {"PIXELCIRCLEFRAME", "pixel_circle_frame", {Type::Number, Type::Number, Type::Number, Type::Number, Type::Number}, Type::Void, true}},
+        {"PIXELELLIPSE", {"PIXELELLIPSE", "pixel_ellipse", {Type::Number, Type::Number, Type::Number, Type::Number, Type::Number, Type::Number}, Type::Void, true}},
+        {"PIXELTRIANGLE", {"PIXELTRIANGLE", "pixel_triangle", {Type::Number, Type::Number, Type::Number, Type::Number, Type::Number, Type::Number, Type::Number, Type::Number}, Type::Void, true}},
+        {"PIXELDIAMOND", {"PIXELDIAMOND", "pixel_diamond", {Type::Number, Type::Number, Type::Number, Type::Number, Type::Number}, Type::Void, true}},
+        {"PIXELSTAR", {"PIXELSTAR", "pixel_star", {Type::Number, Type::Number, Type::Number, Type::Number, Type::Number}, Type::Void, true}},
+        {"PIXELTEXT", {"PIXELTEXT", "pixel_text", {Type::Number, Type::Number, Type::Number, Type::Number, Type::Number, Type::Text}, Type::Void, true}},
+        {"PIXELNUMBER", {"PIXELNUMBER", "pixel_number", {Type::Number, Type::Number, Type::Number, Type::Number, Type::Number, Type::Number}, Type::Void, true}},
+        {"PIXELBUTTON", {"PIXELBUTTON", "pixel_button", {Type::Number, Type::Number, Type::Number, Type::Number, Type::Number, Type::Number, Type::Text, Type::Number, Type::Number, Type::Number}, Type::Number, true}},
+        {"PIXELINPUT", {"PIXELINPUT", "pixel_input", {Type::Number, Type::Number, Type::Number, Type::Number, Type::Number, Type::Number, Type::Text, Type::Number, Type::Number, Type::Number}, Type::Number, true}},
+        {"PIXELOBJECTTEXT", {"PIXELOBJECTTEXT", "pixel_object_text", {Type::Number}, Type::Text, true}},
+        {"PIXELSETTEXT", {"PIXELSETTEXT", "pixel_set_object_text", {Type::Number, Type::Text}, Type::Void, true}},
+    };
+    return builtins;
+}
+
+static const BuiltinFunction* find_builtin_function(const std::string& name) {
+    auto found = builtin_functions().find(name);
+    return found == builtin_functions().end() ? nullptr : &found->second;
+}
 
 class Parser {
 public:
     Parser(std::vector<Token> tokens, std::string file)
         : tokens_(std::move(tokens)), file_(std::move(file)) {
+        register_builtin_signatures();
         collect_signatures();
     }
 
@@ -256,6 +315,13 @@ private:
         throw CompileError(location(file_, token) + ": " + message);
     }
 
+    void register_builtin_signatures() {
+        for (const auto& [name, builtin] : builtin_functions()) {
+            Token token{name, 1, 1};
+            signatures_.insert({name, Signature{token, name, builtin.paramTypes.size(), builtin.paramTypes, builtin.returnType, true}});
+        }
+    }
+
     void collect_signatures() {
         for (std::size_t i = 0; i < tokens_.size();) {
             if (tokens_[i].text != "FUNCTION" || i + 1 >= tokens_.size() || tokens_[i + 1].text != "START") {
@@ -289,10 +355,12 @@ private:
                 fail(i < tokens_.size() ? tokens_[i] : start, "expected return type");
             }
             Type returnType = parse_type_word(tokens_[i++].text);
-            if (signatures_.contains(name)) {
+            auto existing = signatures_.find(name);
+            if (existing != signatures_.end()) {
+                if (existing->second.builtin) fail(start, "function '" + name + "' conflicts with a built-in function");
                 fail(start, "duplicate function '" + name + "'");
             }
-            signatures_.insert({name, Signature{start, name, arity, returnType}});
+            signatures_.insert({name, Signature{start, name, arity, {}, returnType, false}});
         }
     }
 
@@ -543,7 +611,7 @@ private:
             "ADD", "SUBTRACT", "MULTIPLY", "DIVIDE", "MODULO", "JOIN",
             "EQUAL", "LESS", "GREATER", "AND", "OR"
         };
-        return ops.contains(word);
+        return ops.find(word) != ops.end();
     }
 
     std::unique_ptr<Expr> parse_number_literal(bool preferShort) {
@@ -557,7 +625,7 @@ private:
             if (!group.has_value()) break;
             consumedAny = true;
             std::int64_t value = *group;
-            if (!at_end() && kScales.contains(peek().text)) {
+            if (!at_end() && kScales.find(peek().text) != kScales.end()) {
                 std::int64_t scale = kScales.at(peek().text);
                 total += value * scale;
                 ++pos_;
@@ -579,15 +647,15 @@ private:
         if (at_end()) return std::nullopt;
         std::int64_t value = 0;
         bool consumed = false;
-        if (kSmallNumbers.contains(peek().text)) {
+        if (kSmallNumbers.find(peek().text) != kSmallNumbers.end()) {
             value = kSmallNumbers.at(peek().text);
             consumed = true;
             ++pos_;
-        } else if (kTens.contains(peek().text)) {
+        } else if (kTens.find(peek().text) != kTens.end()) {
             value = kTens.at(peek().text);
             consumed = true;
             ++pos_;
-            if (!at_end() && kSmallNumbers.contains(peek().text) &&
+            if (!at_end() && kSmallNumbers.find(peek().text) != kSmallNumbers.end() &&
                 kSmallNumbers.at(peek().text) > 0 && kSmallNumbers.at(peek().text) < 10) {
                 value += kSmallNumbers.at(peek().text);
                 ++pos_;
@@ -653,15 +721,16 @@ private:
 
     void register_functions() {
         for (Function& fn : module_.functions) {
-            if (functions_.contains(fn.name)) fail(fn.token, "duplicate function '" + fn.name + "'");
+            if (functions_.find(fn.name) != functions_.end()) fail(fn.token, "duplicate function '" + fn.name + "'");
+            if (find_builtin_function(fn.name)) fail(fn.token, "function '" + fn.name + "' conflicts with a built-in function");
             functions_[fn.name] = FunctionInfo{&fn};
         }
     }
 
     void register_globals() {
         for (const Declaration& decl : module_.globals) {
-            if (globals_.contains(decl.name)) fail(decl.token, "duplicate global '" + decl.name + "'");
-            if (functions_.contains(decl.name)) fail(decl.token, "global '" + decl.name + "' conflicts with function name");
+            if (globals_.find(decl.name) != globals_.end()) fail(decl.token, "duplicate global '" + decl.name + "'");
+            if (functions_.find(decl.name) != functions_.end()) fail(decl.token, "global '" + decl.name + "' conflicts with function name");
             globals_[decl.name] = Symbol{decl.type, !decl.fixed, false, -1, decl.token};
         }
     }
@@ -722,7 +791,7 @@ private:
     void analyze_function(Function& fn, bool& changed, bool finalPass) {
         std::unordered_map<std::string, Symbol> env = globals_;
         for (std::size_t i = 0; i < fn.params.size(); ++i) {
-            if (env.contains(fn.params[i])) fail(fn.token, "parameter '" + fn.params[i] + "' conflicts with a global");
+            if (env.find(fn.params[i]) != env.end()) fail(fn.token, "parameter '" + fn.params[i] + "' conflicts with a global");
             env[fn.params[i]] = Symbol{fn.paramTypes[i], false, true, static_cast<int>(i), fn.token};
         }
         analyze_block(fn, fn.body, env, changed, finalPass);
@@ -733,7 +802,7 @@ private:
         for (const auto& stmt : body) {
             switch (stmt->kind) {
                 case StmtKind::Decl: {
-                    if (env.contains(stmt->name)) fail(stmt->token, "duplicate declaration '" + stmt->name + "'");
+                    if (env.find(stmt->name) != env.end()) fail(stmt->token, "duplicate declaration '" + stmt->name + "'");
                     Type valueType = analyze_expr(*stmt->expr, &fn, env, stmt->declaredType, changed, finalPass);
                     require_assignable(stmt->expr->token, stmt->declaredType, valueType, "declaration '" + stmt->name + "'");
                     env[stmt->name] = Symbol{stmt->declaredType, !stmt->fixed, false, -1, stmt->token};
@@ -827,7 +896,18 @@ private:
             }
             case ExprKind::Call: {
                 auto found = functions_.find(expr.name);
-                if (found == functions_.end()) fail(expr.token, "unknown function '" + expr.name + "'");
+                if (found == functions_.end()) {
+                    const BuiltinFunction* builtin = find_builtin_function(expr.name);
+                    if (!builtin) fail(expr.token, "unknown function '" + expr.name + "'");
+                    if (builtin->paramTypes.size() != expr.args.size()) fail(expr.token, "wrong function arity for '" + expr.name + "'");
+                    for (std::size_t i = 0; i < expr.args.size(); ++i) {
+                        Type argType = analyze_expr(*expr.args[i], current, env, builtin->paramTypes[i], changed, finalPass);
+                        require_assignable(expr.args[i]->token, builtin->paramTypes[i], argType,
+                                           "argument " + std::to_string(i + 1) + " of '" + expr.name + "'");
+                    }
+                    expr.resolved = builtin->returnType;
+                    break;
+                }
                 Function& callee = *found->second.fn;
                 if (callee.params.size() != expr.args.size()) fail(expr.token, "wrong function arity for '" + expr.name + "'");
                 for (std::size_t i = 0; i < expr.args.size(); ++i) {
@@ -891,18 +971,64 @@ private:
     }
 };
 
+static bool expr_uses_windows_api(const Expr& expr) {
+    if (expr.kind == ExprKind::Call) {
+        if (const BuiltinFunction* builtin = find_builtin_function(expr.name); builtin && builtin->usesWindowsApi) {
+            return true;
+        }
+    }
+    for (const auto& arg : expr.args) {
+        if (expr_uses_windows_api(*arg)) return true;
+    }
+    return false;
+}
+
+static bool stmt_uses_windows_api(const Stmt& stmt) {
+    if (stmt.expr && expr_uses_windows_api(*stmt.expr)) return true;
+    for (const auto& child : stmt.thenBody) {
+        if (stmt_uses_windows_api(*child)) return true;
+    }
+    for (const auto& child : stmt.elseBody) {
+        if (stmt_uses_windows_api(*child)) return true;
+    }
+    return false;
+}
+
+static bool module_uses_windows_api(const Module& module) {
+    for (const auto& decl : module.globals) {
+        if (decl.value && expr_uses_windows_api(*decl.value)) return true;
+    }
+    for (const auto& fn : module.functions) {
+        for (const auto& stmt : fn.body) {
+            if (stmt_uses_windows_api(*stmt)) return true;
+        }
+    }
+    return false;
+}
+
 class CppEmitter {
 public:
-    explicit CppEmitter(const Module& module) : module_(module) {}
+    explicit CppEmitter(const Module& module)
+        : module_(module), usesWindowsApi_(module_uses_windows_api(module)) {}
 
     std::string emit() {
+        if (usesWindowsApi_) out_ << "#include <algorithm>\n";
+        if (usesWindowsApi_) out_ << "#include <cstdlib>\n";
         out_ << "#include <cstdint>\n";
+        if (usesWindowsApi_) out_ << "#include <deque>\n";
         out_ << "#include <iostream>\n";
         out_ << "#include <sstream>\n";
         out_ << "#include <stdexcept>\n";
         out_ << "#include <string>\n";
         out_ << "#include <unordered_map>\n";
         out_ << "#include <vector>\n\n";
+        if (usesWindowsApi_) {
+            out_ << "#ifdef _WIN32\n";
+            out_ << "#define WIN32_LEAN_AND_MEAN\n";
+            out_ << "#include <windows.h>\n";
+            out_ << "#include <windowsx.h>\n";
+            out_ << "#endif\n\n";
+        }
         emit_runtime();
         emit_prototypes();
         for (const auto& decl : module_.globals) emit_declaration(decl, 0, true);
@@ -913,6 +1039,7 @@ public:
 
 private:
     const Module& module_;
+    bool usesWindowsApi_ = false;
     std::ostringstream out_;
 
     static std::string cpp_type(Type type) {
@@ -962,12 +1089,12 @@ private:
         out_ << "    std::int64_t total = 0; bool any = false;\n";
         out_ << "    while (i < words.size()) {\n";
         out_ << "        std::int64_t group = 0;\n";
-        out_ << "        if (small.contains(words[i])) { group = small.at(words[i]); ++i; }\n";
-        out_ << "        else if (tens.contains(words[i])) { group = tens.at(words[i]); ++i; if (i < words.size() && small.contains(words[i]) && small.at(words[i]) > 0 && small.at(words[i]) < 10) { group += small.at(words[i]); ++i; } }\n";
+        out_ << "        if (small.find(words[i]) != small.end()) { group = small.at(words[i]); ++i; }\n";
+        out_ << "        else if (tens.find(words[i]) != tens.end()) { group = tens.at(words[i]); ++i; if (i < words.size() && small.find(words[i]) != small.end() && small.at(words[i]) > 0 && small.at(words[i]) < 10) { group += small.at(words[i]); ++i; } }\n";
         out_ << "        else throw std::runtime_error(\"invalid number input\");\n";
         out_ << "        any = true;\n";
         out_ << "        if (i < words.size() && words[i] == \"HUNDRED\") { group *= 100; ++i; }\n";
-        out_ << "        if (i < words.size() && scales.contains(words[i])) { total += group * scales.at(words[i]); ++i; continue; }\n";
+        out_ << "        if (i < words.size() && scales.find(words[i]) != scales.end()) { total += group * scales.at(words[i]); ++i; continue; }\n";
         out_ << "        total += group;\n";
         out_ << "    }\n";
         out_ << "    if (!any) throw std::runtime_error(\"invalid number input\");\n";
@@ -979,7 +1106,373 @@ private:
         out_ << "    throw std::runtime_error(\"expected TRUE or FALSE\");\n";
         out_ << "}\n";
         out_ << "void print_bool(bool value) { std::cout << (value ? \"TRUE\" : \"FALSE\") << '\\n'; }\n";
+        if (usesWindowsApi_) emit_windows_runtime();
         out_ << "}\n\n";
+    }
+
+    void emit_windows_runtime() {
+        out_ << "#ifdef _WIN32\n";
+        out_ << "namespace winapi {\n";
+        out_ << "constexpr const char* window_class_name = \"TLANG_WINDOW\";\n";
+        out_ << "std::deque<std::int64_t> command_queue;\n";
+        out_ << "std::unordered_map<std::int64_t, std::unordered_map<std::int64_t, COLORREF>> pixel_dictionaries;\n";
+        out_ << "struct PixelLayer { std::int64_t window = 0; std::int64_t z = 0; std::unordered_map<std::int64_t, COLORREF> pixels; };\n";
+        out_ << "struct PixelObject { std::int64_t window = 0; std::int64_t target = 0; std::int64_t x = 0; std::int64_t y = 0; std::int64_t width = 0; std::int64_t height = 0; std::int64_t id = 0; std::string text; COLORREF back = 0; COLORREF fore = 0; COLORREF border = 0; bool input = false; int animation = 0; };\n";
+        out_ << "std::unordered_map<std::int64_t, PixelLayer> pixel_layers;\n";
+        out_ << "std::unordered_map<std::int64_t, std::vector<std::int64_t>> window_layers;\n";
+        out_ << "std::unordered_map<std::int64_t, PixelObject> pixel_objects;\n";
+        out_ << "std::unordered_map<std::int64_t, std::vector<std::int64_t>> window_objects;\n";
+        out_ << "std::int64_t focused_input = 0;\n";
+        out_ << "std::int64_t next_pixel_id = -1;\n";
+        out_ << "bool registered = false;\n";
+        out_ << "std::int64_t to_number(HWND handle) { return static_cast<std::int64_t>(reinterpret_cast<std::intptr_t>(handle)); }\n";
+        out_ << "HWND to_window(std::int64_t handle) { return reinterpret_cast<HWND>(static_cast<std::intptr_t>(handle)); }\n";
+        out_ << "HMENU to_menu(std::int64_t id) { return reinterpret_cast<HMENU>(static_cast<std::intptr_t>(id)); }\n";
+        out_ << "std::int64_t pixel_key(std::int64_t x, std::int64_t y) { return (x << 32) ^ (y & 0xffffffffLL); }\n";
+        out_ << "std::int64_t pixel_x(std::int64_t key) { return key >> 32; }\n";
+        out_ << "std::int64_t pixel_y(std::int64_t key) { return key & 0xffffffffLL; }\n";
+        out_ << "bool is_layer(std::int64_t handle) { return pixel_layers.find(handle) != pixel_layers.end(); }\n";
+        out_ << "std::int64_t target_window(std::int64_t target) { return is_layer(target) ? pixel_layers.at(target).window : target; }\n";
+        out_ << "std::unordered_map<std::int64_t, COLORREF>& target_pixels(std::int64_t target) { return is_layer(target) ? pixel_layers[target].pixels : pixel_dictionaries[target]; }\n";
+        out_ << "int clamp_color(std::int64_t value) {\n";
+        out_ << "    if (value < 0) return 0;\n";
+        out_ << "    if (value > 255) return 255;\n";
+        out_ << "    return static_cast<int>(value);\n";
+        out_ << "}\n";
+        out_ << "COLORREF mix_color(COLORREF left, COLORREF right, int amount) {\n";
+        out_ << "    if (amount < 0) amount = 0;\n";
+        out_ << "    if (amount > 255) amount = 255;\n";
+        out_ << "    int inverse = 255 - amount;\n";
+        out_ << "    return RGB((GetRValue(left) * inverse + GetRValue(right) * amount) / 255,\n";
+        out_ << "               (GetGValue(left) * inverse + GetGValue(right) * amount) / 255,\n";
+        out_ << "               (GetBValue(left) * inverse + GetBValue(right) * amount) / 255);\n";
+        out_ << "}\n";
+        out_ << "void fail_last_error(const char* action) {\n";
+        out_ << "    std::ostringstream message;\n";
+        out_ << "    message << action << \" failed with Windows error \" << GetLastError();\n";
+        out_ << "    throw std::runtime_error(message.str());\n";
+        out_ << "}\n";
+        out_ << "void set_pixel(std::int64_t target, std::int64_t x, std::int64_t y, COLORREF color) { target_pixels(target)[pixel_key(x, y)] = color; }\n";
+        out_ << "void line(std::int64_t target, std::int64_t x1, std::int64_t y1, std::int64_t x2, std::int64_t y2, COLORREF color) {\n";
+        out_ << "    std::int64_t dx = std::llabs(x2 - x1), sx = x1 < x2 ? 1 : -1;\n";
+        out_ << "    std::int64_t dy = -std::llabs(y2 - y1), sy = y1 < y2 ? 1 : -1;\n";
+        out_ << "    std::int64_t err = dx + dy;\n";
+        out_ << "    while (true) {\n";
+        out_ << "        set_pixel(target, x1, y1, color);\n";
+        out_ << "        if (x1 == x2 && y1 == y2) break;\n";
+        out_ << "        std::int64_t e2 = 2 * err;\n";
+        out_ << "        if (e2 >= dy) { err += dy; x1 += sx; }\n";
+        out_ << "        if (e2 <= dx) { err += dx; y1 += sy; }\n";
+        out_ << "    }\n";
+        out_ << "}\n";
+        out_ << "void rect(std::int64_t target, std::int64_t x, std::int64_t y, std::int64_t width, std::int64_t height, COLORREF color) {\n";
+        out_ << "    for (std::int64_t yy = 0; yy < height; ++yy) for (std::int64_t xx = 0; xx < width; ++xx) set_pixel(target, x + xx, y + yy, color);\n";
+        out_ << "}\n";
+        out_ << "void frame(std::int64_t target, std::int64_t x, std::int64_t y, std::int64_t width, std::int64_t height, COLORREF color) {\n";
+        out_ << "    line(target, x, y, x + width - 1, y, color);\n";
+        out_ << "    line(target, x, y + height - 1, x + width - 1, y + height - 1, color);\n";
+        out_ << "    line(target, x, y, x, y + height - 1, color);\n";
+        out_ << "    line(target, x + width - 1, y, x + width - 1, y + height - 1, color);\n";
+        out_ << "}\n";
+        out_ << "void circle(std::int64_t target, std::int64_t cx, std::int64_t cy, std::int64_t radius, COLORREF color, bool filled) {\n";
+        out_ << "    std::int64_t r2 = radius * radius;\n";
+        out_ << "    std::int64_t inner = (radius > 1 ? (radius - 1) * (radius - 1) : 0);\n";
+        out_ << "    for (std::int64_t y = -radius; y <= radius; ++y) for (std::int64_t x = -radius; x <= radius; ++x) {\n";
+        out_ << "        std::int64_t d = x * x + y * y;\n";
+        out_ << "        if ((filled && d <= r2) || (!filled && d <= r2 && d >= inner)) set_pixel(target, cx + x, cy + y, color);\n";
+        out_ << "    }\n";
+        out_ << "}\n";
+        out_ << "void ellipse(std::int64_t target, std::int64_t cx, std::int64_t cy, std::int64_t rx, std::int64_t ry, COLORREF color) {\n";
+        out_ << "    if (rx <= 0 || ry <= 0) return;\n";
+        out_ << "    std::int64_t rx2 = rx * rx, ry2 = ry * ry, limit = rx2 * ry2;\n";
+        out_ << "    for (std::int64_t y = -ry; y <= ry; ++y) for (std::int64_t x = -rx; x <= rx; ++x) if (x * x * ry2 + y * y * rx2 <= limit) set_pixel(target, cx + x, cy + y, color);\n";
+        out_ << "}\n";
+        out_ << "std::int64_t edge(std::int64_t ax, std::int64_t ay, std::int64_t bx, std::int64_t by, std::int64_t px, std::int64_t py) { return (px - ax) * (by - ay) - (py - ay) * (bx - ax); }\n";
+        out_ << "void triangle(std::int64_t target, std::int64_t x1, std::int64_t y1, std::int64_t x2, std::int64_t y2, std::int64_t x3, std::int64_t y3, COLORREF color) {\n";
+        out_ << "    std::int64_t minx = std::min({x1, x2, x3}), maxx = std::max({x1, x2, x3});\n";
+        out_ << "    std::int64_t miny = std::min({y1, y2, y3}), maxy = std::max({y1, y2, y3});\n";
+        out_ << "    for (std::int64_t y = miny; y <= maxy; ++y) for (std::int64_t x = minx; x <= maxx; ++x) {\n";
+        out_ << "        std::int64_t a = edge(x1, y1, x2, y2, x, y), b = edge(x2, y2, x3, y3, x, y), c = edge(x3, y3, x1, y1, x, y);\n";
+        out_ << "        if ((a >= 0 && b >= 0 && c >= 0) || (a <= 0 && b <= 0 && c <= 0)) set_pixel(target, x, y, color);\n";
+        out_ << "    }\n";
+        out_ << "}\n";
+        out_ << "void diamond(std::int64_t target, std::int64_t cx, std::int64_t cy, std::int64_t radius, COLORREF color) {\n";
+        out_ << "    for (std::int64_t y = -radius; y <= radius; ++y) for (std::int64_t x = -radius; x <= radius; ++x) if (std::llabs(x) + std::llabs(y) <= radius) set_pixel(target, cx + x, cy + y, color);\n";
+        out_ << "}\n";
+        out_ << "void star(std::int64_t target, std::int64_t cx, std::int64_t cy, std::int64_t radius, COLORREF color) {\n";
+        out_ << "    line(target, cx, cy - radius, cx, cy + radius, color);\n";
+        out_ << "    line(target, cx - radius, cy, cx + radius, cy, color);\n";
+        out_ << "    line(target, cx - radius, cy - radius, cx + radius, cy + radius, color);\n";
+        out_ << "    line(target, cx - radius, cy + radius, cx + radius, cy - radius, color);\n";
+        out_ << "    circle(target, cx, cy, radius / 4 + 1, color, true);\n";
+        out_ << "}\n";
+        out_ << "const std::vector<std::string>& glyph(char ch) {\n";
+        out_ << "    static const std::vector<std::string> blank = {\"00000\",\"00000\",\"00000\",\"00000\",\"00000\",\"00000\",\"00000\"};\n";
+        out_ << "    static const std::unordered_map<char, std::vector<std::string>> font = {\n";
+        out_ << "        {'A', {\"01110\",\"10001\",\"10001\",\"11111\",\"10001\",\"10001\",\"10001\"}}, {'B', {\"11110\",\"10001\",\"10001\",\"11110\",\"10001\",\"10001\",\"11110\"}}, {'C', {\"01111\",\"10000\",\"10000\",\"10000\",\"10000\",\"10000\",\"01111\"}},\n";
+        out_ << "        {'D', {\"11110\",\"10001\",\"10001\",\"10001\",\"10001\",\"10001\",\"11110\"}}, {'E', {\"11111\",\"10000\",\"10000\",\"11110\",\"10000\",\"10000\",\"11111\"}}, {'F', {\"11111\",\"10000\",\"10000\",\"11110\",\"10000\",\"10000\",\"10000\"}},\n";
+        out_ << "        {'G', {\"01111\",\"10000\",\"10000\",\"10011\",\"10001\",\"10001\",\"01111\"}}, {'H', {\"10001\",\"10001\",\"10001\",\"11111\",\"10001\",\"10001\",\"10001\"}}, {'I', {\"11111\",\"00100\",\"00100\",\"00100\",\"00100\",\"00100\",\"11111\"}},\n";
+        out_ << "        {'J', {\"00111\",\"00010\",\"00010\",\"00010\",\"10010\",\"10010\",\"01100\"}}, {'K', {\"10001\",\"10010\",\"10100\",\"11000\",\"10100\",\"10010\",\"10001\"}}, {'L', {\"10000\",\"10000\",\"10000\",\"10000\",\"10000\",\"10000\",\"11111\"}},\n";
+        out_ << "        {'M', {\"10001\",\"11011\",\"10101\",\"10101\",\"10001\",\"10001\",\"10001\"}}, {'N', {\"10001\",\"11001\",\"10101\",\"10011\",\"10001\",\"10001\",\"10001\"}}, {'O', {\"01110\",\"10001\",\"10001\",\"10001\",\"10001\",\"10001\",\"01110\"}},\n";
+        out_ << "        {'P', {\"11110\",\"10001\",\"10001\",\"11110\",\"10000\",\"10000\",\"10000\"}}, {'Q', {\"01110\",\"10001\",\"10001\",\"10001\",\"10101\",\"10010\",\"01101\"}}, {'R', {\"11110\",\"10001\",\"10001\",\"11110\",\"10100\",\"10010\",\"10001\"}},\n";
+        out_ << "        {'S', {\"01111\",\"10000\",\"10000\",\"01110\",\"00001\",\"00001\",\"11110\"}}, {'T', {\"11111\",\"00100\",\"00100\",\"00100\",\"00100\",\"00100\",\"00100\"}}, {'U', {\"10001\",\"10001\",\"10001\",\"10001\",\"10001\",\"10001\",\"01110\"}},\n";
+        out_ << "        {'V', {\"10001\",\"10001\",\"10001\",\"10001\",\"10001\",\"01010\",\"00100\"}}, {'W', {\"10001\",\"10001\",\"10001\",\"10101\",\"10101\",\"10101\",\"01010\"}}, {'X', {\"10001\",\"10001\",\"01010\",\"00100\",\"01010\",\"10001\",\"10001\"}},\n";
+        out_ << "        {'Y', {\"10001\",\"10001\",\"01010\",\"00100\",\"00100\",\"00100\",\"00100\"}}, {'Z', {\"11111\",\"00001\",\"00010\",\"00100\",\"01000\",\"10000\",\"11111\"}},\n";
+        out_ << "        {'0', {\"01110\",\"10001\",\"10011\",\"10101\",\"11001\",\"10001\",\"01110\"}}, {'1', {\"00100\",\"01100\",\"00100\",\"00100\",\"00100\",\"00100\",\"01110\"}}, {'2', {\"01110\",\"10001\",\"00001\",\"00010\",\"00100\",\"01000\",\"11111\"}},\n";
+        out_ << "        {'3', {\"11110\",\"00001\",\"00001\",\"01110\",\"00001\",\"00001\",\"11110\"}}, {'4', {\"00010\",\"00110\",\"01010\",\"10010\",\"11111\",\"00010\",\"00010\"}}, {'5', {\"11111\",\"10000\",\"10000\",\"11110\",\"00001\",\"00001\",\"11110\"}},\n";
+        out_ << "        {'6', {\"01110\",\"10000\",\"10000\",\"11110\",\"10001\",\"10001\",\"01110\"}}, {'7', {\"11111\",\"00001\",\"00010\",\"00100\",\"01000\",\"01000\",\"01000\"}}, {'8', {\"01110\",\"10001\",\"10001\",\"01110\",\"10001\",\"10001\",\"01110\"}},\n";
+        out_ << "        {'9', {\"01110\",\"10001\",\"10001\",\"01111\",\"00001\",\"00001\",\"01110\"}}, {'-', {\"00000\",\"00000\",\"00000\",\"11111\",\"00000\",\"00000\",\"00000\"}}, {' ', {\"00000\",\"00000\",\"00000\",\"00000\",\"00000\",\"00000\",\"00000\"}}\n";
+        out_ << "    };\n";
+        out_ << "    auto found = font.find(ch);\n";
+        out_ << "    return found == font.end() ? blank : found->second;\n";
+        out_ << "}\n";
+        out_ << "void text(std::int64_t target, std::int64_t x, std::int64_t y, std::int64_t scale, COLORREF color, const std::string& value) {\n";
+        out_ << "    if (scale < 1) scale = 1;\n";
+        out_ << "    std::int64_t cursor = x;\n";
+        out_ << "    for (char raw : value) {\n";
+        out_ << "        char ch = raw >= 'a' && raw <= 'z' ? static_cast<char>(raw - 'a' + 'A') : raw;\n";
+        out_ << "        const auto& rows = glyph(ch);\n";
+        out_ << "        for (std::int64_t gy = 0; gy < static_cast<std::int64_t>(rows.size()); ++gy) for (std::int64_t gx = 0; gx < static_cast<std::int64_t>(rows[gy].size()); ++gx) if (rows[gy][gx] == '1') rect(target, cursor + gx * scale, y + gy * scale, scale, scale, color);\n";
+        out_ << "        cursor += 6 * scale;\n";
+        out_ << "    }\n";
+        out_ << "}\n";
+        out_ << "void draw_object(const PixelObject& object) {\n";
+        out_ << "    rect(object.target, object.x, object.y, object.width, object.height, object.back);\n";
+        out_ << "    frame(object.target, object.x, object.y, object.width, object.height, object.border);\n";
+        out_ << "    std::int64_t scale = std::max<std::int64_t>(1, (object.height - 8) / 9);\n";
+        out_ << "    text(object.target, object.x + 5, object.y + std::max<std::int64_t>(2, (object.height - 7 * scale) / 2), scale, object.fore, object.text);\n";
+        out_ << "}\n";
+        out_ << "void redraw_object(std::int64_t objectHandle) { auto found = pixel_objects.find(objectHandle); if (found != pixel_objects.end()) draw_object(found->second); }\n";
+        out_ << "void present_target(std::int64_t target) { HWND window = to_window(target_window(target)); InvalidateRect(window, nullptr, TRUE); UpdateWindow(window); }\n";
+        out_ << "LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {\n";
+        out_ << "    switch (message) {\n";
+        out_ << "        case WM_COMMAND:\n";
+        out_ << "            command_queue.push_back(static_cast<std::int64_t>(LOWORD(wparam)));\n";
+        out_ << "            return 0;\n";
+        out_ << "        case WM_LBUTTONDOWN: {\n";
+        out_ << "            std::int64_t handle = to_number(window);\n";
+        out_ << "            std::int64_t mx = GET_X_LPARAM(lparam), my = GET_Y_LPARAM(lparam);\n";
+        out_ << "            focused_input = 0;\n";
+        out_ << "            auto objects = window_objects.find(handle);\n";
+        out_ << "            if (objects != window_objects.end()) {\n";
+        out_ << "                for (auto it = objects->second.rbegin(); it != objects->second.rend(); ++it) {\n";
+        out_ << "                    auto found = pixel_objects.find(*it);\n";
+        out_ << "                    if (found == pixel_objects.end()) continue;\n";
+        out_ << "                    PixelObject& object = found->second;\n";
+        out_ << "                    if (mx >= object.x && my >= object.y && mx < object.x + object.width && my < object.y + object.height) {\n";
+        out_ << "                        if (object.input) { focused_input = *it; SetFocus(window); }\n";
+        out_ << "                        else command_queue.push_back(object.id);\n";
+        out_ << "                        break;\n";
+        out_ << "                    }\n";
+        out_ << "                }\n";
+        out_ << "            }\n";
+        out_ << "            return 0;\n";
+        out_ << "        }\n";
+        out_ << "        case WM_CHAR:\n";
+        out_ << "            if (focused_input && pixel_objects.find(focused_input) != pixel_objects.end()) {\n";
+        out_ << "                PixelObject& object = pixel_objects[focused_input];\n";
+        out_ << "                if (wparam == 8) { if (!object.text.empty()) object.text.pop_back(); }\n";
+        out_ << "                else if (wparam >= 32 && wparam <= 126) object.text.push_back(static_cast<char>(wparam));\n";
+        out_ << "                draw_object(object);\n";
+        out_ << "                present_target(object.target);\n";
+        out_ << "            }\n";
+        out_ << "            return 0;\n";
+        out_ << "        case WM_DESTROY:\n";
+        out_ << "            pixel_dictionaries.erase(to_number(window));\n";
+        out_ << "            window_layers.erase(to_number(window));\n";
+        out_ << "            window_objects.erase(to_number(window));\n";
+        out_ << "            PostQuitMessage(0);\n";
+        out_ << "            return 0;\n";
+        out_ << "        case WM_PAINT: {\n";
+        out_ << "            PAINTSTRUCT paint{};\n";
+        out_ << "            HDC dc = BeginPaint(window, &paint);\n";
+        out_ << "            auto found = pixel_dictionaries.find(to_number(window));\n";
+        out_ << "            if (found != pixel_dictionaries.end()) {\n";
+        out_ << "                for (const auto& [key, color] : found->second) {\n";
+        out_ << "                    SetPixel(dc, static_cast<int>(pixel_x(key)), static_cast<int>(pixel_y(key)), color);\n";
+        out_ << "                }\n";
+        out_ << "            }\n";
+        out_ << "            auto layers = window_layers.find(to_number(window));\n";
+        out_ << "            if (layers != window_layers.end()) {\n";
+        out_ << "                std::vector<std::int64_t> ordered = layers->second;\n";
+        out_ << "                std::sort(ordered.begin(), ordered.end(), [](std::int64_t left, std::int64_t right) { return pixel_layers[left].z < pixel_layers[right].z; });\n";
+        out_ << "                for (std::int64_t layerHandle : ordered) for (const auto& [key, color] : pixel_layers[layerHandle].pixels) SetPixel(dc, static_cast<int>(pixel_x(key)), static_cast<int>(pixel_y(key)), color);\n";
+        out_ << "            }\n";
+        out_ << "            EndPaint(window, &paint);\n";
+        out_ << "            return 0;\n";
+        out_ << "        }\n";
+        out_ << "    }\n";
+        out_ << "    return DefWindowProcA(window, message, wparam, lparam);\n";
+        out_ << "}\n";
+        out_ << "void ensure_window_class() {\n";
+        out_ << "    if (registered) return;\n";
+        out_ << "    WNDCLASSA wc{};\n";
+        out_ << "    wc.lpfnWndProc = window_proc;\n";
+        out_ << "    wc.hInstance = GetModuleHandleA(nullptr);\n";
+        out_ << "    wc.lpszClassName = window_class_name;\n";
+        out_ << "    wc.hCursor = LoadCursorA(nullptr, IDC_ARROW);\n";
+        out_ << "    wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);\n";
+        out_ << "    if (!RegisterClassA(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) fail_last_error(\"RegisterClassA\");\n";
+        out_ << "    registered = true;\n";
+        out_ << "}\n";
+        out_ << "}\n";
+        out_ << "std::int64_t win_message(const std::string& title, const std::string& message) {\n";
+        out_ << "    return MessageBoxA(nullptr, message.c_str(), title.c_str(), MB_OK | MB_ICONINFORMATION);\n";
+        out_ << "}\n";
+        out_ << "std::int64_t win_window(const std::string& title, std::int64_t width, std::int64_t height) {\n";
+        out_ << "    winapi::ensure_window_class();\n";
+        out_ << "    HWND window = CreateWindowExA(0, winapi::window_class_name, title.c_str(), WS_OVERLAPPEDWINDOW | WS_VISIBLE,\n";
+        out_ << "                                   CW_USEDEFAULT, CW_USEDEFAULT, static_cast<int>(width), static_cast<int>(height),\n";
+        out_ << "                                   nullptr, nullptr, GetModuleHandleA(nullptr), nullptr);\n";
+        out_ << "    if (!window) winapi::fail_last_error(\"CreateWindowExA\");\n";
+        out_ << "    return winapi::to_number(window);\n";
+        out_ << "}\n";
+        out_ << "std::int64_t win_button(std::int64_t parent, const std::string& text, std::int64_t x, std::int64_t y,\n";
+        out_ << "                        std::int64_t width, std::int64_t height, std::int64_t id) {\n";
+        out_ << "    HWND control = CreateWindowExA(0, \"BUTTON\", text.c_str(), WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,\n";
+        out_ << "                                   static_cast<int>(x), static_cast<int>(y), static_cast<int>(width), static_cast<int>(height),\n";
+        out_ << "                                   winapi::to_window(parent), winapi::to_menu(id), GetModuleHandleA(nullptr), nullptr);\n";
+        out_ << "    if (!control) winapi::fail_last_error(\"CreateWindowExA BUTTON\");\n";
+        out_ << "    return winapi::to_number(control);\n";
+        out_ << "}\n";
+        out_ << "std::int64_t win_label(std::int64_t parent, const std::string& text, std::int64_t x, std::int64_t y,\n";
+        out_ << "                       std::int64_t width, std::int64_t height) {\n";
+        out_ << "    HWND control = CreateWindowExA(0, \"STATIC\", text.c_str(), WS_CHILD | WS_VISIBLE,\n";
+        out_ << "                                   static_cast<int>(x), static_cast<int>(y), static_cast<int>(width), static_cast<int>(height),\n";
+        out_ << "                                   winapi::to_window(parent), nullptr, GetModuleHandleA(nullptr), nullptr);\n";
+        out_ << "    if (!control) winapi::fail_last_error(\"CreateWindowExA STATIC\");\n";
+        out_ << "    return winapi::to_number(control);\n";
+        out_ << "}\n";
+        out_ << "std::int64_t win_edit(std::int64_t parent, const std::string& text, std::int64_t x, std::int64_t y,\n";
+        out_ << "                      std::int64_t width, std::int64_t height, std::int64_t id) {\n";
+        out_ << "    HWND control = CreateWindowExA(WS_EX_CLIENTEDGE, \"EDIT\", text.c_str(), WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,\n";
+        out_ << "                                   static_cast<int>(x), static_cast<int>(y), static_cast<int>(width), static_cast<int>(height),\n";
+        out_ << "                                   winapi::to_window(parent), winapi::to_menu(id), GetModuleHandleA(nullptr), nullptr);\n";
+        out_ << "    if (!control) winapi::fail_last_error(\"CreateWindowExA EDIT\");\n";
+        out_ << "    return winapi::to_number(control);\n";
+        out_ << "}\n";
+        out_ << "std::string win_text(std::int64_t handle) {\n";
+        out_ << "    HWND window = winapi::to_window(handle);\n";
+        out_ << "    int length = GetWindowTextLengthA(window);\n";
+        out_ << "    if (length < 0) winapi::fail_last_error(\"GetWindowTextLengthA\");\n";
+        out_ << "    std::vector<char> buffer(static_cast<std::size_t>(length) + 1);\n";
+        out_ << "    if (GetWindowTextA(window, buffer.data(), length + 1) == 0 && length > 0) winapi::fail_last_error(\"GetWindowTextA\");\n";
+        out_ << "    return std::string(buffer.data());\n";
+        out_ << "}\n";
+        out_ << "void win_set_text(std::int64_t handle, const std::string& text) {\n";
+        out_ << "    if (!SetWindowTextA(winapi::to_window(handle), text.c_str())) winapi::fail_last_error(\"SetWindowTextA\");\n";
+        out_ << "}\n";
+        out_ << "void win_show(std::int64_t handle) {\n";
+        out_ << "    HWND window = winapi::to_window(handle);\n";
+        out_ << "    ShowWindow(window, SW_SHOW);\n";
+        out_ << "    UpdateWindow(window);\n";
+        out_ << "}\n";
+        out_ << "bool win_wait() {\n";
+        out_ << "    MSG message{};\n";
+        out_ << "    BOOL result = GetMessageA(&message, nullptr, 0, 0);\n";
+        out_ << "    if (result == -1) winapi::fail_last_error(\"GetMessageA\");\n";
+        out_ << "    if (result == 0) return false;\n";
+        out_ << "    TranslateMessage(&message);\n";
+        out_ << "    DispatchMessageA(&message);\n";
+        out_ << "    return true;\n";
+        out_ << "}\n";
+        out_ << "std::int64_t win_run() {\n";
+        out_ << "    MSG message{};\n";
+        out_ << "    while (true) {\n";
+        out_ << "        BOOL result = GetMessageA(&message, nullptr, 0, 0);\n";
+        out_ << "        if (result == -1) winapi::fail_last_error(\"GetMessageA\");\n";
+        out_ << "        if (result == 0) return static_cast<std::int64_t>(message.wParam);\n";
+        out_ << "        TranslateMessage(&message);\n";
+        out_ << "        DispatchMessageA(&message);\n";
+        out_ << "    }\n";
+        out_ << "}\n";
+        out_ << "std::int64_t win_command() {\n";
+        out_ << "    if (winapi::command_queue.empty()) return 0;\n";
+        out_ << "    std::int64_t id = winapi::command_queue.front();\n";
+        out_ << "    winapi::command_queue.pop_front();\n";
+        out_ << "    return id;\n";
+        out_ << "}\n";
+        out_ << "void win_quit() { PostQuitMessage(0); }\n";
+        out_ << "std::int64_t pixel_window(const std::string& title, std::int64_t width, std::int64_t height) {\n";
+        out_ << "    winapi::ensure_window_class();\n";
+        out_ << "    RECT rect{0, 0, static_cast<LONG>(width), static_cast<LONG>(height)};\n";
+        out_ << "    DWORD style = WS_OVERLAPPEDWINDOW | WS_VISIBLE;\n";
+        out_ << "    if (!AdjustWindowRect(&rect, style, FALSE)) winapi::fail_last_error(\"AdjustWindowRect\");\n";
+        out_ << "    HWND window = CreateWindowExA(0, winapi::window_class_name, title.c_str(), style,\n";
+        out_ << "                                   CW_USEDEFAULT, CW_USEDEFAULT, rect.right - rect.left, rect.bottom - rect.top,\n";
+        out_ << "                                   nullptr, nullptr, GetModuleHandleA(nullptr), nullptr);\n";
+        out_ << "    if (!window) winapi::fail_last_error(\"CreateWindowExA PIXELWINDOW\");\n";
+        out_ << "    std::int64_t handle = winapi::to_number(window);\n";
+        out_ << "    winapi::pixel_dictionaries[handle];\n";
+        out_ << "    return handle;\n";
+        out_ << "}\n";
+        out_ << "std::int64_t pixel_color(std::int64_t red, std::int64_t green, std::int64_t blue) {\n";
+        out_ << "    return static_cast<std::int64_t>(RGB(winapi::clamp_color(red), winapi::clamp_color(green), winapi::clamp_color(blue)));\n";
+        out_ << "}\n";
+        out_ << "int pixel_hex_digit(char ch) {\n";
+        out_ << "    if (ch >= '0' && ch <= '9') return ch - '0';\n";
+        out_ << "    if (ch >= 'A' && ch <= 'F') return 10 + (ch - 'A');\n";
+        out_ << "    if (ch >= 'a' && ch <= 'f') return 10 + (ch - 'a');\n";
+        out_ << "    throw std::runtime_error(\"invalid HEX color digit\");\n";
+        out_ << "}\n";
+        out_ << "std::int64_t pixel_hex(const std::string& value) {\n";
+        out_ << "    std::string hex;\n";
+        out_ << "    for (char ch : value) {\n";
+        out_ << "        if (ch == ' ' || ch == '#') continue;\n";
+        out_ << "        hex.push_back(ch);\n";
+        out_ << "    }\n";
+        out_ << "    if (hex.size() >= 2 && hex[0] == '0' && (hex[1] == 'X' || hex[1] == 'x')) hex = hex.substr(2);\n";
+        out_ << "    if (hex.size() == 3) {\n";
+        out_ << "        std::string expanded;\n";
+        out_ << "        for (char ch : hex) { expanded.push_back(ch); expanded.push_back(ch); }\n";
+        out_ << "        hex = expanded;\n";
+        out_ << "    }\n";
+        out_ << "    if (hex.size() != 6) throw std::runtime_error(\"HEX color must have 3 or 6 digits\");\n";
+        out_ << "    std::int64_t red = pixel_hex_digit(hex[0]) * 16 + pixel_hex_digit(hex[1]);\n";
+        out_ << "    std::int64_t green = pixel_hex_digit(hex[2]) * 16 + pixel_hex_digit(hex[3]);\n";
+        out_ << "    std::int64_t blue = pixel_hex_digit(hex[4]) * 16 + pixel_hex_digit(hex[5]);\n";
+        out_ << "    return pixel_color(red, green, blue);\n";
+        out_ << "}\n";
+        out_ << "void pixel_set(std::int64_t handle, std::int64_t x, std::int64_t y, std::int64_t color) {\n";
+        out_ << "    winapi::pixel_dictionaries[handle][winapi::pixel_key(x, y)] = static_cast<COLORREF>(color);\n";
+        out_ << "}\n";
+        out_ << "std::int64_t pixel_get(std::int64_t handle, std::int64_t x, std::int64_t y) {\n";
+        out_ << "    auto canvas = winapi::pixel_dictionaries.find(handle);\n";
+        out_ << "    if (canvas == winapi::pixel_dictionaries.end()) return 0;\n";
+        out_ << "    auto pixel = canvas->second.find(winapi::pixel_key(x, y));\n";
+        out_ << "    return pixel == canvas->second.end() ? 0 : static_cast<std::int64_t>(pixel->second);\n";
+        out_ << "}\n";
+        out_ << "void pixel_clear(std::int64_t handle) {\n";
+        out_ << "    winapi::pixel_dictionaries[handle].clear();\n";
+        out_ << "    InvalidateRect(winapi::to_window(handle), nullptr, TRUE);\n";
+        out_ << "}\n";
+        out_ << "void pixel_present(std::int64_t handle) {\n";
+        out_ << "    HWND window = winapi::to_window(handle);\n";
+        out_ << "    InvalidateRect(window, nullptr, TRUE);\n";
+        out_ << "    UpdateWindow(window);\n";
+        out_ << "}\n";
+        out_ << "#else\n";
+        out_ << "[[noreturn]] void require_windows_api() { throw std::runtime_error(\"WIN built-ins require Windows API support\"); }\n";
+        out_ << "std::int64_t win_message(const std::string&, const std::string&) { require_windows_api(); }\n";
+        out_ << "std::int64_t win_window(const std::string&, std::int64_t, std::int64_t) { require_windows_api(); }\n";
+        out_ << "std::int64_t win_button(std::int64_t, const std::string&, std::int64_t, std::int64_t, std::int64_t, std::int64_t, std::int64_t) { require_windows_api(); }\n";
+        out_ << "std::int64_t win_label(std::int64_t, const std::string&, std::int64_t, std::int64_t, std::int64_t, std::int64_t) { require_windows_api(); }\n";
+        out_ << "std::int64_t win_edit(std::int64_t, const std::string&, std::int64_t, std::int64_t, std::int64_t, std::int64_t, std::int64_t) { require_windows_api(); }\n";
+        out_ << "std::string win_text(std::int64_t) { require_windows_api(); }\n";
+        out_ << "void win_set_text(std::int64_t, const std::string&) { require_windows_api(); }\n";
+        out_ << "void win_show(std::int64_t) { require_windows_api(); }\n";
+        out_ << "bool win_wait() { require_windows_api(); }\n";
+        out_ << "std::int64_t win_run() { require_windows_api(); }\n";
+        out_ << "std::int64_t win_command() { require_windows_api(); }\n";
+        out_ << "void win_quit() { require_windows_api(); }\n";
+        out_ << "std::int64_t pixel_window(const std::string&, std::int64_t, std::int64_t) { require_windows_api(); }\n";
+        out_ << "std::int64_t pixel_color(std::int64_t red, std::int64_t green, std::int64_t blue) { return ((red & 255) | ((green & 255) << 8) | ((blue & 255) << 16)); }\n";
+        out_ << "std::int64_t pixel_hex(const std::string&) { require_windows_api(); }\n";
+        out_ << "void pixel_set(std::int64_t, std::int64_t, std::int64_t, std::int64_t) { require_windows_api(); }\n";
+        out_ << "std::int64_t pixel_get(std::int64_t, std::int64_t, std::int64_t) { require_windows_api(); }\n";
+        out_ << "void pixel_clear(std::int64_t) { require_windows_api(); }\n";
+        out_ << "void pixel_present(std::int64_t) { require_windows_api(); }\n";
+        out_ << "#endif\n";
     }
 
     void emit_prototypes() {
@@ -1081,7 +1574,8 @@ private:
             case ExprKind::Identifier:
                 return cpp_name(expr.name);
             case ExprKind::Call: {
-                std::string code = cpp_name(expr.name, true) + "(";
+                const BuiltinFunction* builtin = find_builtin_function(expr.name);
+                std::string code = builtin ? ("tlang_runtime::" + builtin->cppName + "(") : (cpp_name(expr.name, true) + "(");
                 for (std::size_t i = 0; i < expr.args.size(); ++i) {
                     if (i) code += ", ";
                     code += emit_expr(*expr.args[i]);
@@ -1123,6 +1617,72 @@ static std::string read_file(const fs::path& path) {
     return buffer.str();
 }
 
+static std::vector<std::string> split_source_words(const std::string& line) {
+    std::istringstream input(line);
+    std::vector<std::string> words;
+    for (std::string word; input >> word;) words.push_back(word);
+    return words;
+}
+
+static std::string lower_ascii(std::string value) {
+    for (char& ch : value) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    return value;
+}
+
+static bool is_library_directive(const std::vector<std::string>& words) {
+    return words.size() == 5 && words[0] == "USE" && words[1] == "LIBRARY" &&
+           is_identifier_word(words[2], false) && words[3] == "END" && words[4] == "LINE";
+}
+
+static fs::path resolve_library_path(const fs::path& includingFile, const std::string& name) {
+    const std::string lowerName = lower_ascii(name) + ".tlib";
+    const std::string exactName = name + ".tlib";
+    const fs::path parent = includingFile.parent_path();
+    std::vector<fs::path> candidates = {
+        parent / "libraries" / lowerName,
+        parent / "libraries" / exactName,
+        parent / ".." / "libraries" / lowerName,
+        parent / ".." / "libraries" / exactName,
+        fs::current_path() / "libraries" / lowerName,
+        fs::current_path() / "libraries" / exactName,
+    };
+    for (const fs::path& candidate : candidates) {
+        std::error_code ec;
+        if (fs::exists(candidate, ec)) return fs::weakly_canonical(candidate, ec);
+    }
+    std::ostringstream message;
+    message << "cannot find library '" << name << "'. Tried:";
+    for (const fs::path& candidate : candidates) message << " " << candidate.string();
+    throw CompileError(message.str());
+}
+
+static std::string load_source_with_libraries(const fs::path& path, std::set<fs::path>& loadedLibraries) {
+    const std::string source = read_file(path);
+    std::istringstream lines(source);
+    std::ostringstream mainSource;
+    std::ostringstream librarySource;
+    std::string line;
+    while (std::getline(lines, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        std::vector<std::string> words = split_source_words(line);
+        if (is_library_directive(words)) {
+            fs::path libraryPath = resolve_library_path(path, words[2]);
+            if (loadedLibraries.insert(libraryPath).second) {
+                librarySource << "\n" << load_source_with_libraries(libraryPath, loadedLibraries);
+            }
+            mainSource << "\n";
+            continue;
+        }
+        mainSource << line << "\n";
+    }
+    return mainSource.str() + librarySource.str();
+}
+
+static std::string load_source_with_libraries(const fs::path& path) {
+    std::set<fs::path> loadedLibraries;
+    return load_source_with_libraries(path, loadedLibraries);
+}
+
 static void write_file(const fs::path& path, const std::string& content) {
     std::ofstream out(path, std::ios::binary);
     if (!out) throw CompileError("cannot write file: " + path.string());
@@ -1143,15 +1703,52 @@ static std::string quote_arg(const fs::path& path) {
     return "\"" + escaped + "\"";
 }
 
+static std::string sanitize_file_stem(std::string value) {
+    std::string result;
+    for (char ch : value) {
+        if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_') {
+            result.push_back(ch);
+        }
+    }
+    return result.empty() ? "program" : result;
+}
+
+static fs::path make_temporary_cpp_path(const fs::path& input) {
+    std::error_code ec;
+    fs::path directory = fs::temp_directory_path(ec);
+    if (ec) directory = fs::current_path();
+
+    const std::string stem = sanitize_file_stem(input.stem().string());
+    const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+    for (int attempt = 0; attempt < 100; ++attempt) {
+        fs::path candidate = directory / ("tlang-" + stem + "-" + std::to_string(stamp) + "-" + std::to_string(attempt) + ".cpp");
+        if (!fs::exists(candidate, ec)) return candidate;
+    }
+    throw CompileError("cannot create a temporary C++ output path");
+}
+
+struct TemporaryFileCleanup {
+    fs::path path;
+    bool enabled = false;
+
+    ~TemporaryFileCleanup() {
+        if (!enabled || path.empty()) return;
+        std::error_code ec;
+        fs::remove(path, ec);
+    }
+};
+
 struct CliOptions {
     fs::path input;
     fs::path output = "a.exe";
     fs::path cppOutput;
     bool cppOnly = false;
+    bool emitCpp = false;
+    bool windowsGui = false;
 };
 
 static void print_usage() {
-    std::cerr << "usage: tlang compile INPUT [--emit-cpp FILE] [--cpp-only] [-o OUTPUT]\n";
+    std::cerr << "usage: tlang compile INPUT [--emit-cpp FILE] [--cpp-only] [--windows-gui] [-o OUTPUT]\n";
 }
 
 static CliOptions parse_cli(int argc, char** argv) {
@@ -1161,8 +1758,6 @@ static CliOptions parse_cli(int argc, char** argv) {
     }
     CliOptions options;
     options.input = argv[2];
-    options.cppOutput = options.input;
-    options.cppOutput.replace_extension(".cpp");
     options.output = options.input;
 #ifdef _WIN32
     options.output.replace_extension(".exe");
@@ -1177,11 +1772,19 @@ static CliOptions parse_cli(int argc, char** argv) {
         } else if (arg == "--emit-cpp") {
             if (++i >= argc) throw CompileError("--emit-cpp requires a value");
             options.cppOutput = argv[i];
+            options.emitCpp = true;
         } else if (arg == "--cpp-only") {
             options.cppOnly = true;
+        } else if (arg == "--windows-gui") {
+            options.windowsGui = true;
         } else {
             throw CompileError("unknown option: " + arg);
         }
+    }
+    if (options.cppOnly && options.cppOutput.empty()) {
+        options.cppOutput = options.input;
+        options.cppOutput.replace_extension(".cpp");
+        options.emitCpp = true;
     }
     return options;
 }
@@ -1189,7 +1792,7 @@ static CliOptions parse_cli(int argc, char** argv) {
 int main(int argc, char** argv) {
     try {
         CliOptions options = parse_cli(argc, argv);
-        const std::string source = read_file(options.input);
+        const std::string source = load_source_with_libraries(options.input);
         auto tokens = lex_source(source, options.input.string());
         Parser parser(std::move(tokens), options.input.string());
         Module module = parser.parse_module();
@@ -1197,14 +1800,22 @@ int main(int argc, char** argv) {
         analyzer.analyze();
         CppEmitter emitter(module);
         std::string cpp = emitter.emit();
+        TemporaryFileCleanup temporaryCpp;
+        if (options.cppOutput.empty()) {
+            options.cppOutput = make_temporary_cpp_path(options.input);
+            temporaryCpp.path = options.cppOutput;
+            temporaryCpp.enabled = true;
+        }
         write_file(options.cppOutput, cpp);
         if (!options.cppOnly) {
             std::string command = "g++ -std=c++20 -O2 " + quote_arg(options.cppOutput) + " -o " + quote_arg(options.output);
+            if (module_uses_windows_api(module)) command += " -luser32 -lgdi32";
+            if (options.windowsGui) command += " -mwindows";
             int code = run_command(command);
             if (code != 0) throw CompileError("C++ compiler failed");
         }
         std::cout << "OK\n";
-        std::cout << "C++: " << options.cppOutput.string() << "\n";
+        if (options.emitCpp) std::cout << "C++: " << options.cppOutput.string() << "\n";
         if (!options.cppOnly) std::cout << "Executable: " << options.output.string() << "\n";
         return 0;
     } catch (const CompileError& err) {

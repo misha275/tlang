@@ -2,7 +2,7 @@
   "name": "tlang-vscode-extension",
   "displayName": "TLang",
   "description": "VS Code support for TLang, a word-only compiled language.",
-  "version": "0.0.1",
+  "version": "0.0.4",
   "publisher": "local",
   "repository": {
     "type": "git",
@@ -27,7 +27,26 @@
         "extensions": [
           ".tlang"
         ],
-        "configuration": "./language-configuration.json"
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/tlang.svg",
+          "dark": "./icons/tlang.svg"
+        }
+      },
+      {
+        "id": "tlib",
+        "aliases": [
+          "TLang Library",
+          "tlib"
+        ],
+        "extensions": [
+          ".tlib"
+        ],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/tlib.svg",
+          "dark": "./icons/tlib.svg"
+        }
       }
     ],
     "grammars": [
@@ -35,11 +54,34 @@
         "language": "tlang",
         "scopeName": "source.tlang",
         "path": "./syntaxes/tlang.tmLanguage.json"
+      },
+      {
+        "language": "tlib",
+        "scopeName": "source.tlang",
+        "path": "./syntaxes/tlang.tmLanguage.json"
+      }
+    ],
+    "themes": [
+      {
+        "label": "TLang Colors (Dark)",
+        "uiTheme": "vs-dark",
+        "path": "./themes/tlang-color-theme.json"
+      }
+    ],
+    "iconThemes": [
+      {
+        "id": "tlang-file-icons",
+        "label": "TLang File Icons",
+        "path": "./themes/tlang-file-icon-theme.json"
       }
     ],
     "snippets": [
       {
         "language": "tlang",
+        "path": "./snippets/tlang.json"
+      },
+      {
+        "language": "tlib",
         "path": "./snippets/tlang.json"
       }
     ],

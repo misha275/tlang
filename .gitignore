@@ -1,2 +1,4 @@
 *.exe
 examples/*.cpp
+examples/*.exe
+vscode-extensions/node_modules
