@@ -1,0 +1,50 @@
+{
+  "Function": {
+    "prefix": "tlang-fn",
+    "body": [
+      "FUNCTION START ${1:NAME} RETURNS ${2:NUMBER} END LINE",
+      "${3:RETURN ZERO END LINE}",
+      "FUNCTION END ${1:NAME} END LINE"
+    ],
+    "description": "Create a TLang function"
+  },
+  "Main Function": {
+    "prefix": "tlang-main",
+    "body": [
+      "FUNCTION START MAIN RETURNS NUMBER END LINE",
+      "${1:RETURN ZERO END LINE}",
+      "FUNCTION END MAIN END LINE"
+    ],
+    "description": "Create the MAIN function"
+  },
+  "Variable Declaration": {
+    "prefix": "tlang-let",
+    "body": "LET ${1:NAME} AS ${2:NUMBER} VALUE ${3:ONE} END LINE",
+    "description": "Create a mutable variable"
+  },
+  "If Block": {
+    "prefix": "tlang-if",
+    "body": [
+      "IF ${1:TRUE} THEN END LINE",
+      "${2:OUTPUT TEXT START HELLO TEXT END END LINE}",
+      "ELSE END LINE",
+      "${3:OUTPUT TEXT START WORLD TEXT END END LINE}",
+      "END IF END LINE"
+    ],
+    "description": "Create an IF block"
+  },
+  "While Block": {
+    "prefix": "tlang-while",
+    "body": [
+      "WHILE ${1:TRUE} DO END LINE",
+      "${2:OUTPUT TEXT START LOOP TEXT END END LINE}",
+      "END WHILE END LINE"
+    ],
+    "description": "Create a WHILE block"
+  },
+  "Text Literal": {
+    "prefix": "tlang-text",
+    "body": "TEXT START ${1:HELLO WORLD} TEXT END",
+    "description": "Create a TLang text literal"
+  }
+}

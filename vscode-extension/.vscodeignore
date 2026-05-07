@@ -1,0 +1,7 @@
+out/test/**
+.vscode/**
+**/*.ts
+**/*.map
+package-lock.json
+node_modules/**/test/**
+node_modules/**/docs/**

@@ -1,0 +1,84 @@
+{
+  "name": "tlang-vscode-extension",
+  "displayName": "TLang",
+  "description": "VS Code support for TLang, a word-only compiled language.",
+  "version": "0.0.1",
+  "publisher": "local",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/tlang"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "tlang",
+        "aliases": [
+          "TLang",
+          "tlang"
+        ],
+        "extensions": [
+          ".tlang"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "tlang",
+        "scopeName": "source.tlang",
+        "path": "./syntaxes/tlang.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "tlang",
+        "path": "./snippets/tlang.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "tlang.compileActiveFile",
+        "title": "TLang: Compile Active File"
+      }
+    ],
+    "configuration": {
+      "title": "TLang",
+      "properties": {
+        "tlang.compilerPath": {
+          "type": "string",
+          "default": "tlang.exe",
+          "description": "Path to the TLang compiler executable."
+        },
+        "tlang.defaultOutputDirectory": {
+          "type": "string",
+          "default": "",
+          "description": "Optional output directory for generated files."
+        },
+        "tlang.emitCppByDefault": {
+          "type": "boolean",
+          "default": false,
+          "description": "Emit only C++ when compiling from the command palette."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "watch": "tsc -watch -p .",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.4.5",
+    "vsce": "^2.15.0"
+  }
+}

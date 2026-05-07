@@ -1,0 +1,75 @@
+{
+  "name": "TLang",
+  "scopeName": "source.tlang",
+  "patterns": [
+    {
+      "include": "#text"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#types"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#booleans"
+    },
+    {
+      "include": "#identifiers"
+    }
+  ],
+  "repository": {
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.tlang",
+          "match": "\\b(FUNCTION|START|END|LINE|LET|FIXED|SET|AS|VALUE|RETURNS|RETURN|IF|THEN|ELSE|WHILE|DO|INPUT|OUTPUT|CALL|PARAMETER|ADD|SUBTRACT|MULTIPLY|DIVIDE|MODULO|JOIN|EQUAL|LESS|GREATER|AND|OR|NOT)\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "storage.type.tlang",
+          "match": "\\b(NUMBER|TEXT|BOOL|VOID)\\b"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.word.tlang",
+          "match": "\\b(NEGATIVE )?(ZERO|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN|ELEVEN|TWELVE|THIRTEEN|FOURTEEN|FIFTEEN|SIXTEEN|SEVENTEEN|EIGHTEEN|NINETEEN|TWENTY|THIRTY|FORTY|FIFTY|SIXTY|SEVENTY|EIGHTY|NINETY|HUNDRED|THOUSAND|MILLION|BILLION|TRILLION)( (ZERO|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN|ELEVEN|TWELVE|THIRTEEN|FOURTEEN|FIFTEEN|SIXTEEN|SEVENTEEN|EIGHTEEN|NINETEEN|TWENTY|THIRTY|FORTY|FIFTY|SIXTY|SEVENTY|EIGHTY|NINETY|HUNDRED|THOUSAND|MILLION|BILLION|TRILLION))*\\b"
+        }
+      ]
+    },
+    "booleans": {
+      "patterns": [
+        {
+          "name": "constant.language.boolean.tlang",
+          "match": "\\b(TRUE|FALSE)\\b"
+        }
+      ]
+    },
+    "text": {
+      "patterns": [
+        {
+          "name": "string.quoted.other.tlang",
+          "begin": "\\bTEXT START\\b",
+          "end": "\\bTEXT END\\b"
+        }
+      ]
+    },
+    "identifiers": {
+      "patterns": [
+        {
+          "name": "variable.other.tlang",
+          "match": "\\b[A-Z][A-Z]*\\b"
+        }
+      ]
+    }
+  }
+}
