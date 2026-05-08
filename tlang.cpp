@@ -15,15 +15,196 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <regex>
 #include <unordered_map>
 #include <utility>
 #include <vector>
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 namespace fs = std::filesystem;
 
 struct CompileError : std::runtime_error {
     using std::runtime_error::runtime_error;
 };
+
+enum class DiagnosticKind { Info, Success, Warning, Error };
+
+struct TerminalStyle {
+    bool useColor = false;
+};
+
+static bool is_color_allowed_by_env() {
+    const char* noColor = std::getenv("NO_COLOR");
+    if (noColor && *noColor) return false;
+    const char* term = std::getenv("TERM");
+    if (term && std::string(term) == "dumb") return false;
+    return true;
+}
+
+#ifdef _WIN32
+static bool enable_virtual_terminal(HANDLE handle) {
+    if (handle == INVALID_HANDLE_VALUE || handle == nullptr) return false;
+    DWORD mode = 0;
+    if (!GetConsoleMode(handle, &mode)) return false;
+    if ((mode & ENABLE_VIRTUAL_TERMINAL_PROCESSING) != 0) return true;
+    return SetConsoleMode(handle, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING) != 0;
+}
+#endif
+
+static TerminalStyle make_terminal_style() {
+    TerminalStyle style;
+    if (!is_color_allowed_by_env()) return style;
+#ifdef _WIN32
+    const bool stdoutOk = enable_virtual_terminal(GetStdHandle(STD_OUTPUT_HANDLE));
+    const bool stderrOk = enable_virtual_terminal(GetStdHandle(STD_ERROR_HANDLE));
+    style.useColor = stdoutOk || stderrOk;
+#else
+    style.useColor = true;
+#endif
+    return style;
+}
+
+static const char* color_code(const TerminalStyle& style, DiagnosticKind kind) {
+    if (!style.useColor) return "";
+    switch (kind) {
+        case DiagnosticKind::Info: return "\x1b[36m";
+        case DiagnosticKind::Success: return "\x1b[32m";
+        case DiagnosticKind::Warning: return "\x1b[33m";
+        case DiagnosticKind::Error: return "\x1b[31m";
+    }
+    return "";
+}
+
+static const char* reset_code(const TerminalStyle& style) {
+    return style.useColor ? "\x1b[0m" : "";
+}
+
+static std::string diagnostic_label(DiagnosticKind kind) {
+    switch (kind) {
+        case DiagnosticKind::Info: return "info";
+        case DiagnosticKind::Success: return "success";
+        case DiagnosticKind::Warning: return "warning";
+        case DiagnosticKind::Error: return "error";
+    }
+    return "info";
+}
+
+static void print_diagnostic(std::ostream& out, const TerminalStyle& style, DiagnosticKind kind, const std::string& message) {
+    out << color_code(style, kind) << diagnostic_label(kind) << ": " << reset_code(style) << message << "\n";
+}
+
+struct ParsedDiagnostic {
+    std::string file;
+    int line = 0;
+    int col = 0;
+    std::string details;
+};
+
+static std::optional<ParsedDiagnostic> parse_location_message(const std::string& message) {
+    static const std::regex pattern(R"(^(.*):([0-9]+):([0-9]+):\s*(.+)$)");
+    std::smatch match;
+    if (!std::regex_match(message, match, pattern) || match.size() != 5) return std::nullopt;
+    ParsedDiagnostic parsed;
+    parsed.file = match[1].str();
+    parsed.line = std::stoi(match[2].str());
+    parsed.col = std::stoi(match[3].str());
+    parsed.details = match[4].str();
+    return parsed;
+}
+
+static std::optional<std::string> read_source_line(const std::string& file, int lineNumber) {
+    if (lineNumber <= 0) return std::nullopt;
+    std::ifstream in{fs::path(file), std::ios::binary};
+    if (!in) return std::nullopt;
+    std::string sourceLine;
+    for (int lineIndex = 1; lineIndex <= lineNumber; ++lineIndex) {
+        if (!std::getline(in, sourceLine)) return std::nullopt;
+    }
+    if (!sourceLine.empty() && sourceLine.back() == '\r') sourceLine.pop_back();
+    return sourceLine;
+}
+
+static std::string make_caret_line(const std::string& sourceLine, int col) {
+    int safeCol = std::max(1, col);
+    std::string caret;
+    caret.reserve(static_cast<std::size_t>(safeCol + 1));
+    for (int i = 1; i < safeCol; ++i) {
+        if (i - 1 < static_cast<int>(sourceLine.size()) && sourceLine[static_cast<std::size_t>(i - 1)] == '\t') caret += '\t';
+        else caret += ' ';
+    }
+    caret += '^';
+    return caret;
+}
+
+static std::optional<std::string> diagnostic_hint_for(const std::string& message) {
+    if (message.find("invalid command") != std::string::npos || message.find("unknown option") != std::string::npos ||
+        message.find("requires a value") != std::string::npos) {
+        return "use: tlang compile INPUT [--emit-cpp FILE] [--cpp-only] [--windows-gui] [-o OUTPUT]";
+    }
+    if (message.find("cannot open input file") != std::string::npos) {
+        return "check path to input file and current working directory";
+    }
+    if (message.find("cannot find library") != std::string::npos) {
+        return "place .tlib in ./libraries near project or next to input file";
+    }
+    if (message.find("C++ compiler failed") != std::string::npos) {
+        return "install g++ (MinGW/LLVM), ensure it is in PATH, and rerun with --emit-cpp to inspect generated C++";
+    }
+    if (message.find("forbidden character") != std::string::npos) {
+        return "remove unsupported symbols; use letters, digits, spaces and supported punctuation";
+    }
+    if (message.find("expected END LINE") != std::string::npos) {
+        return "finish each statement with: END LINE";
+    }
+    if (message.find("expected statement") != std::string::npos || message.find("expected expression") != std::string::npos) {
+        return "check previous line for missing keywords (SET/RETURN/IF/WHILE/CALL) or missing END LINE";
+    }
+    if (message.find("undeclared identifier") != std::string::npos) {
+        return "declare variable before usage: LET name AS TYPE VALUE ... END LINE";
+    }
+    if (message.find("unknown function") != std::string::npos) {
+        return "check function name spelling and ensure FUNCTION START ... FUNCTION END exists";
+    }
+    if (message.find("type mismatch") != std::string::npos) {
+        return "make both sides the same type or convert expression to the declared type";
+    }
+    if (message.find("duplicate") != std::string::npos) {
+        return "rename one of the duplicated declarations or function parameters";
+    }
+    if (message.find("missing MAIN function") != std::string::npos) {
+        return "add entry point: FUNCTION START MAIN RETURNS NUMBER END LINE ... FUNCTION END MAIN END LINE";
+    }
+    if (message.find("unclosed text literal") != std::string::npos) {
+        return "close text literal with: TEXT END";
+    }
+    return std::nullopt;
+}
+
+static void print_compile_error(const TerminalStyle& style, const std::string& message) {
+    if (std::optional<ParsedDiagnostic> parsed = parse_location_message(message); parsed.has_value()) {
+        const ParsedDiagnostic& d = *parsed;
+        print_diagnostic(std::cerr, style, DiagnosticKind::Error, d.details);
+        print_diagnostic(std::cerr, style, DiagnosticKind::Info,
+                         "at " + d.file + ":" + std::to_string(d.line) + ":" + std::to_string(d.col));
+        if (std::optional<std::string> sourceLine = read_source_line(d.file, d.line); sourceLine.has_value()) {
+            print_diagnostic(std::cerr, style, DiagnosticKind::Info,
+                             std::to_string(d.line) + " | " + *sourceLine);
+            print_diagnostic(std::cerr, style, DiagnosticKind::Info,
+                             "    | " + make_caret_line(*sourceLine, d.col));
+        }
+    } else {
+        print_diagnostic(std::cerr, style, DiagnosticKind::Error, message);
+    }
+    if (std::optional<std::string> hint = diagnostic_hint_for(message); hint.has_value()) {
+        print_diagnostic(std::cerr, style, DiagnosticKind::Warning, "hint: " + *hint);
+    }
+}
 
 struct Token {
     std::string text;
@@ -1122,6 +1303,8 @@ private:
         out_ << "std::unordered_map<std::int64_t, std::vector<std::int64_t>> window_layers;\n";
         out_ << "std::unordered_map<std::int64_t, PixelObject> pixel_objects;\n";
         out_ << "std::unordered_map<std::int64_t, std::vector<std::int64_t>> window_objects;\n";
+        out_ << "std::unordered_map<HWND, WNDPROC> edit_previous_procs;\n";
+        out_ << "std::unordered_map<HWND, std::int64_t> edit_command_ids;\n";
         out_ << "std::int64_t focused_input = 0;\n";
         out_ << "std::int64_t next_pixel_id = -1;\n";
         out_ << "bool registered = false;\n";
@@ -1244,6 +1427,19 @@ private:
         out_ << "}\n";
         out_ << "void redraw_object(std::int64_t objectHandle) { auto found = pixel_objects.find(objectHandle); if (found != pixel_objects.end()) draw_object(found->second); }\n";
         out_ << "void present_target(std::int64_t target) { HWND window = to_window(target_window(target)); InvalidateRect(window, nullptr, TRUE); UpdateWindow(window); }\n";
+        out_ << "LRESULT CALLBACK edit_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {\n";
+        out_ << "    if (message == WM_KEYDOWN && wparam == VK_RETURN) {\n";
+        out_ << "        HWND parent = GetParent(hwnd);\n";
+        out_ << "        auto found = edit_command_ids.find(hwnd);\n";
+        out_ << "        if (parent != nullptr && found != edit_command_ids.end()) {\n";
+        out_ << "            SendMessageA(parent, WM_COMMAND, MAKEWPARAM(static_cast<UINT>(found->second), BN_CLICKED), reinterpret_cast<LPARAM>(hwnd));\n";
+        out_ << "        }\n";
+        out_ << "        return 0;\n";
+        out_ << "    }\n";
+        out_ << "    auto previous = edit_previous_procs.find(hwnd);\n";
+        out_ << "    if (previous != edit_previous_procs.end()) return CallWindowProcA(previous->second, hwnd, message, wparam, lparam);\n";
+        out_ << "    return DefWindowProcA(hwnd, message, wparam, lparam);\n";
+        out_ << "}\n";
         out_ << "LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {\n";
         out_ << "    switch (message) {\n";
         out_ << "        case WM_COMMAND:\n";
@@ -1345,10 +1541,12 @@ private:
         out_ << "}\n";
         out_ << "std::int64_t win_edit(std::int64_t parent, const std::string& text, std::int64_t x, std::int64_t y,\n";
         out_ << "                      std::int64_t width, std::int64_t height, std::int64_t id) {\n";
-        out_ << "    HWND control = CreateWindowExA(WS_EX_CLIENTEDGE, \"EDIT\", text.c_str(), WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | ES_AUTOHSCROLL | ES_MULTILINE | ES_WANTRETURN,\n";
+        out_ << "    HWND control = CreateWindowExA(WS_EX_CLIENTEDGE, \"EDIT\", text.c_str(), WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,\n";
         out_ << "                                   static_cast<int>(x), static_cast<int>(y), static_cast<int>(width), static_cast<int>(height),\n";
         out_ << "                                   winapi::to_window(parent), winapi::to_menu(id), GetModuleHandleA(nullptr), nullptr);\n";
         out_ << "    if (!control) winapi::fail_last_error(\"CreateWindowExA EDIT\");\n";
+        out_ << "    winapi::edit_command_ids[control] = id;\n";
+        out_ << "    winapi::edit_previous_procs[control] = reinterpret_cast<WNDPROC>(SetWindowLongPtrA(control, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(winapi::edit_proc)));\n";
         out_ << "    return winapi::to_number(control);\n";
         out_ << "}\n";
         out_ << "std::string win_text(std::int64_t handle) {\n";
@@ -1790,6 +1988,7 @@ static CliOptions parse_cli(int argc, char** argv) {
 }
 
 int main(int argc, char** argv) {
+    const TerminalStyle style = make_terminal_style();
     try {
         CliOptions options = parse_cli(argc, argv);
         const std::string source = load_source_with_libraries(options.input);
@@ -1812,17 +2011,17 @@ int main(int argc, char** argv) {
             if (module_uses_windows_api(module)) command += " -luser32 -lgdi32";
             if (options.windowsGui) command += " -mwindows";
             int code = run_command(command);
-            if (code != 0) throw CompileError("C++ compiler failed");
+            if (code != 0) throw CompileError("C++ compiler failed with exit code " + std::to_string(code));
         }
-        std::cout << "OK\n";
-        if (options.emitCpp) std::cout << "C++: " << options.cppOutput.string() << "\n";
-        if (!options.cppOnly) std::cout << "Executable: " << options.output.string() << "\n";
+        print_diagnostic(std::cout, style, DiagnosticKind::Success, "OK");
+        if (options.emitCpp) print_diagnostic(std::cout, style, DiagnosticKind::Info, "C++: " + options.cppOutput.string());
+        if (!options.cppOnly) print_diagnostic(std::cout, style, DiagnosticKind::Info, "Executable: " + options.output.string());
         return 0;
     } catch (const CompileError& err) {
-        std::cerr << "error: " << err.what() << "\n";
+        print_compile_error(style, err.what());
         return 1;
     } catch (const std::exception& err) {
-        std::cerr << "error: " << err.what() << "\n";
+        print_diagnostic(std::cerr, style, DiagnosticKind::Error, err.what());
         return 1;
     }
 }
