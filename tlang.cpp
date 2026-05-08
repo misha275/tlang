@@ -1345,7 +1345,7 @@ private:
         out_ << "}\n";
         out_ << "std::int64_t win_edit(std::int64_t parent, const std::string& text, std::int64_t x, std::int64_t y,\n";
         out_ << "                      std::int64_t width, std::int64_t height, std::int64_t id) {\n";
-        out_ << "    HWND control = CreateWindowExA(WS_EX_CLIENTEDGE, \"EDIT\", text.c_str(), WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,\n";
+        out_ << "    HWND control = CreateWindowExA(WS_EX_CLIENTEDGE, \"EDIT\", text.c_str(), WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | ES_AUTOHSCROLL | ES_MULTILINE | ES_WANTRETURN,\n";
         out_ << "                                   static_cast<int>(x), static_cast<int>(y), static_cast<int>(width), static_cast<int>(height),\n";
         out_ << "                                   winapi::to_window(parent), winapi::to_menu(id), GetModuleHandleA(nullptr), nullptr);\n";
         out_ << "    if (!control) winapi::fail_last_error(\"CreateWindowExA EDIT\");\n";
