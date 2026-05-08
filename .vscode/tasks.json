@@ -52,6 +52,97 @@
 			"isBackground": false,
 			"problemMatcher": [],
 			"group": "build"
+		},
+		{
+			"label": "compile-paint-example",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/d",
+				"/c",
+				"cd /d C:\\Users\\Liosh\\Desktop\\programming\\tlang && tlang.exe compile examples\\paint.tlang --emit-cpp examples\\paint.cpp --windows-gui"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "compile-paint-example-2",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/d",
+				"/c",
+				"cd /d C:\\Users\\Liosh\\Desktop\\programming\\tlang && tlang.exe compile examples\\paint.tlang --emit-cpp examples\\paint.cpp --windows-gui"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "compile-paint-example-3",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/d",
+				"/c",
+				"cd /d C:\\Users\\Liosh\\Desktop\\programming\\tlang && tlang.exe compile examples\\paint.tlang --emit-cpp examples\\paint.cpp --windows-gui"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "compile-paint-example-4",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/d",
+				"/c",
+				"cd /d C:\\Users\\Liosh\\Desktop\\programming\\tlang && tlang.exe compile examples\\paint.tlang --emit-cpp examples\\paint.cpp --windows-gui"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "compile-paint-example-5",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/d",
+				"/c",
+				"cd /d C:\\Users\\Liosh\\Desktop\\programming\\tlang && tlang.exe compile examples\\paint.tlang --emit-cpp examples\\paint.cpp --windows-gui"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "compile-paint-example-6",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/d",
+				"/c",
+				"cd /d C:\\Users\\Liosh\\Desktop\\programming\\tlang && tlang.exe compile examples\\paint.tlang --emit-cpp examples\\paint.cpp --windows-gui"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "compile-paint-example-7",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/d",
+				"/c",
+				"cd /d C:\\Users\\Liosh\\Desktop\\programming\\tlang && tlang.exe compile examples\\paint.tlang --emit-cpp examples\\paint.cpp --windows-gui"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
 		}
 	]
 }
